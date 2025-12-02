@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
 use std::path::PathBuf;
 
 fn find_all_exes() -> Vec<PathBuf> {
@@ -13,6 +14,7 @@ fn find_all_exes() -> Vec<PathBuf> {
 }
 
 fn main() -> io::Result<()> {
+    let all_exes = find_all_exes();
     loop {
         print!("$ ");
         io::stdout().flush()?;
@@ -23,6 +25,10 @@ fn main() -> io::Result<()> {
 
         let args: Vec<_> = args_str.split(" ").collect();
 
+        let path_matches = all_exes.iter()
+            .filter(|entry| entry.file_stem().unwrap() == args[0])
+            .collect::<Vec<_>>();
+
         if args[0] == "exit" {
             break;
         }
@@ -30,8 +36,7 @@ fn main() -> io::Result<()> {
             println!("{}", args[1..].join(" "));
         }
         else if args[0] == "type" {
-            let all_exes = find_all_exes();
-            let path_matches = all_exes.iter()
+            let _path_matches = all_exes.iter()
                 .filter(|entry| entry.file_stem().unwrap() == args[1])
                 .collect::<Vec<_>>();
 
@@ -39,13 +44,17 @@ fn main() -> io::Result<()> {
                 if vec!["echo", "exit", "type"].contains(&args[1]) {
                     println!("{} is a shell builtin", args[1]);
                 }
-                else if path_matches.first().is_some() {
-                    println!("{} is {}", args[1], path_matches.first().unwrap().display());
+                else if _path_matches.first().is_some() {
+                    println!("{} is {}", args[1], _path_matches.first().unwrap().display());
                 }
                 else {
                     println!("{}: not found", args[1]);
                 }
             }
+        }
+        else if path_matches.first().is_some() {
+            let aaa = Command::new(args[0]).args(&args[1..]).spawn();
+            aaa.unwrap().wait()?;
         }
         else {
             println!("{}: command not found", args[0]);
