@@ -18,6 +18,16 @@ fn main() -> io::Result<()> {
         else if args[0] == "echo" {
             println!("{}", args[1..].join(" "));
         }
+        else if args[0] == "type" {
+            if args.len() > 1 {
+                if vec!["echo", "exit", "type"].contains(&args[1]) {
+                    println!("{} is a shell builtin", args[1]);
+                }
+                else {
+                    println!("{}: not found", args[1]);
+                }
+            }
+        }
         else {
             println!("{}: command not found", args[0]);
         }
