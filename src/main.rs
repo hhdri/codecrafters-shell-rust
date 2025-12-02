@@ -10,8 +10,13 @@ fn main() -> io::Result<()> {
         io::stdin().read_line(&mut buffer)?;
         buffer = buffer[..(buffer.len() - 1)].parse().unwrap();
 
-        println!("{}: command not found", buffer);
+        if buffer == "exit" {
+            break;
+        }
+        else {
+            println!("{}: command not found", buffer);
+        }
     }
 
-    // Ok(())
+    Ok(())
 }
