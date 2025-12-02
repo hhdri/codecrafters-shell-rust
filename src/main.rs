@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::env;
-use std::env::current_dir;
+use std::env::{current_dir, set_current_dir};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -38,6 +38,12 @@ fn main() -> io::Result<()> {
         }
         else if args[0] == "pwd" {
             println!("{}", current_dir()?.display());
+        }
+        else if args[0] == "cd" {
+            let cd_result = set_current_dir(args[1]);
+            if cd_result.is_err() {
+                println!("cd: {}: No such file or directory", args[1]);
+            }
         }
         else if args[0] == "type" {
             let _path_matches = all_exes.iter()
