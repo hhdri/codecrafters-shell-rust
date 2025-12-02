@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::env;
-use std::env::{current_dir, set_current_dir};
+use std::env::{current_dir, set_current_dir, var_os};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -40,7 +40,9 @@ fn main() -> io::Result<()> {
             println!("{}", current_dir()?.display());
         }
         else if args[0] == "cd" {
-            let cd_result = set_current_dir(args[1]);
+            let cd_result = set_current_dir(
+                args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
+            );
             if cd_result.is_err() {
                 println!("cd: {}: No such file or directory", args[1]);
             }
