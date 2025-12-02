@@ -1,5 +1,16 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+
+fn find_all_exes() -> Vec<PathBuf> {
+    env::split_paths(&env::var_os("PATH").unwrap())
+        .map(fs::read_dir).flatten().flatten().flatten().filter(
+        |entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0
+    ).map(|entry| entry.path()).collect()
+}
 
 fn main() -> io::Result<()> {
     loop {
@@ -19,9 +30,17 @@ fn main() -> io::Result<()> {
             println!("{}", args[1..].join(" "));
         }
         else if args[0] == "type" {
+            let all_exes = find_all_exes();
+            let path_matches = all_exes.iter()
+                .filter(|entry| entry.file_stem().unwrap() == args[1])
+                .collect::<Vec<_>>();
+
             if args.len() > 1 {
                 if vec!["echo", "exit", "type"].contains(&args[1]) {
                     println!("{} is a shell builtin", args[1]);
+                }
+                else if path_matches.first().is_some() {
+                    println!("{} is {}", args[1], path_matches.first().unwrap().display());
                 }
                 else {
                     println!("{}: not found", args[1]);
