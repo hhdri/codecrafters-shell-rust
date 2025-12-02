@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::env;
+use std::env::current_dir;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -35,13 +36,16 @@ fn main() -> io::Result<()> {
         else if args[0] == "echo" {
             println!("{}", args[1..].join(" "));
         }
+        else if args[0] == "pwd" {
+            println!("{}", current_dir()?.display());
+        }
         else if args[0] == "type" {
             let _path_matches = all_exes.iter()
                 .filter(|entry| entry.file_stem().unwrap() == args[1])
                 .collect::<Vec<_>>();
 
             if args.len() > 1 {
-                if vec!["echo", "exit", "type"].contains(&args[1]) {
+                if vec!["echo", "exit", "type", "pwd"].contains(&args[1]) {
                     println!("{} is a shell builtin", args[1]);
                 }
                 else if _path_matches.first().is_some() {
