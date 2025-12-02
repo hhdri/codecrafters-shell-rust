@@ -6,15 +6,20 @@ fn main() -> io::Result<()> {
         print!("$ ");
         io::stdout().flush()?;
 
-        let mut buffer = String::new();
-        io::stdin().read_line(&mut buffer)?;
-        buffer = buffer[..(buffer.len() - 1)].parse().unwrap();
+        let mut args_str = String::new();
+        io::stdin().read_line(&mut args_str)?;
+        args_str = args_str[..(args_str.len() - 1)].parse().unwrap();
 
-        if buffer == "exit" {
+        let args: Vec<_> = args_str.split(" ").collect();
+
+        if args[0] == "exit" {
             break;
         }
+        else if args[0] == "echo" {
+            println!("{}", args[1..].join(" "));
+        }
         else {
-            println!("{}: command not found", buffer);
+            println!("{}: command not found", args[0]);
         }
     }
 
