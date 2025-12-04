@@ -17,15 +17,20 @@ fn find_all_exes() -> Vec<PathBuf> {
 fn parse_args(args_str: String) -> Vec<String>{
     let mut args = vec![String::from("")];
     let mut ongoing_single_quote = false;
+    let mut ongoing_double_quote = false;
     for elem in args_str.chars() {
         let args_len_curr = args.len();
-        if elem == ' ' && !ongoing_single_quote {
+
+        if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
             if !args[args_len_curr - 1].is_empty() {
-            args.push(String::from(""));
+                args.push(String::from(""));
+            }
         }
-    }
-        else if elem == '\'' {
+        else if elem == '\'' && !ongoing_double_quote {
             ongoing_single_quote = !ongoing_single_quote;
+        }
+        else if elem == '\"' {
+            ongoing_double_quote = !ongoing_double_quote;
         }
         else {
             args[args_len_curr - 1].push(elem);
