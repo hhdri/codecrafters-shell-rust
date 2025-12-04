@@ -18,13 +18,21 @@ fn parse_args(args_str: String) -> Vec<String>{
     let mut args = vec![String::from("")];
     let mut ongoing_single_quote = false;
     let mut ongoing_double_quote = false;
+    let mut ongoing_escaping = false;
     for elem in args_str.chars() {
         let args_len_curr = args.len();
 
-        if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
+        if ongoing_escaping {
+            args[args_len_curr - 1].push(elem);
+            ongoing_escaping = false;
+        }
+        else if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
             if !args[args_len_curr - 1].is_empty() {
                 args.push(String::from(""));
             }
+        }
+        else if elem == '\\' && !ongoing_double_quote {
+            ongoing_escaping = true;
         }
         else if elem == '\'' && !ongoing_double_quote {
             ongoing_single_quote = !ongoing_single_quote;
@@ -103,4 +111,21 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_parse_args() {
+        let in1 = String::from("cat \"/tmp/pig/f\\n53\" \"/tmp/pig/f\\99\" \"/tmp/pig/f'\\'38\"");
+        let out1 = parse_args(in1);
+        assert_eq!(out1, vec!["cat", "/tmp/pig/f\\n53", "/tmp/pig/f\\99", "/tmp/pig/f'\\'38"]);
+
+        let in2 = String::from("cat \"/tmp/fox/f\\n51\" \"/tmp/fox/f\\22\" \"/tmp/fox/f'\\'90\"");
+        let out2 = parse_args(in2);
+        assert_eq!(out2, vec!["cat", "/tmp/fox/f\\n51",  "/tmp/fox/f\\22", "/tmp/fox/f'\\'90"]);
+    }
 }
