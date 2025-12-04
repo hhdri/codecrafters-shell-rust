@@ -8,10 +8,33 @@ use std::process::Command;
 use std::path::PathBuf;
 
 fn find_all_exes() -> Vec<PathBuf> {
-    env::split_paths(&env::var_os("PATH").unwrap())
+    env::split_paths(&var_os("PATH").unwrap())
         .map(fs::read_dir).flatten().flatten().flatten().filter(
         |entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0
     ).map(|entry| entry.path()).collect()
+}
+
+fn parse_args(args_str: String) -> Vec<String>{
+    let mut args = vec![String::from("")];
+    let mut ongoing_single_quote = false;
+    for elem in args_str.chars() {
+        let args_len_curr = args.len();
+        if elem == ' ' && !ongoing_single_quote {
+            if !args[args_len_curr - 1].is_empty() {
+            args.push(String::from(""));
+        }
+    }
+        else if elem == '\'' {
+            ongoing_single_quote = !ongoing_single_quote;
+        }
+        else {
+            args[args_len_curr - 1].push(elem);
+        }
+    }
+    if args[args.len() - 1].trim().is_empty() {
+        args.pop();
+    }
+    args
 }
 
 fn main() -> io::Result<()> {
@@ -24,10 +47,11 @@ fn main() -> io::Result<()> {
         io::stdin().read_line(&mut args_str)?;
         args_str = args_str[..(args_str.len() - 1)].parse().unwrap();
 
-        let args: Vec<_> = args_str.split(" ").collect();
+        // let args: Vec<_> = args_str.split(" ").collect();
+        let args = parse_args(args_str);
 
         let path_matches = all_exes.iter()
-            .filter(|entry| entry.file_stem().unwrap() == args[0])
+            .filter(|entry| *entry.file_stem().unwrap() == *args[0])
             .collect::<Vec<_>>();
 
         if args[0] == "exit" {
@@ -49,11 +73,11 @@ fn main() -> io::Result<()> {
         }
         else if args[0] == "type" {
             let _path_matches = all_exes.iter()
-                .filter(|entry| entry.file_stem().unwrap() == args[1])
+                .filter(|entry| *entry.file_stem().unwrap() == *args[1])
                 .collect::<Vec<_>>();
 
             if args.len() > 1 {
-                if vec!["echo", "exit", "type", "pwd"].contains(&args[1]) {
+                if vec!["echo", "exit", "type", "pwd"].contains(&args[1].as_str()) {
                     println!("{} is a shell builtin", args[1]);
                 }
                 else if _path_matches.first().is_some() {
@@ -65,7 +89,7 @@ fn main() -> io::Result<()> {
             }
         }
         else if path_matches.first().is_some() {
-            let aaa = Command::new(args[0]).args(&args[1..]).spawn();
+            let aaa = Command::new(&args[0]).args(&args[1..]).spawn();
             aaa.unwrap().wait()?;
         }
         else {
