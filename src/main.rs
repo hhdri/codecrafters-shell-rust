@@ -31,13 +31,13 @@ fn parse_args(args_str: String) -> Vec<String>{
                 args.push(String::from(""));
             }
         }
-        else if elem == '\\' && !ongoing_double_quote {
+        else if elem == '\\' && !ongoing_single_quote && !ongoing_double_quote {
             ongoing_escaping = true;
         }
         else if elem == '\'' && !ongoing_double_quote {
             ongoing_single_quote = !ongoing_single_quote;
         }
-        else if elem == '\"' {
+        else if elem == '\"' && !ongoing_single_quote {
             ongoing_double_quote = !ongoing_double_quote;
         }
         else {
@@ -127,5 +127,9 @@ mod tests {
         let in2 = String::from("cat \"/tmp/fox/f\\n51\" \"/tmp/fox/f\\22\" \"/tmp/fox/f'\\'90\"");
         let out2 = parse_args(in2);
         assert_eq!(out2, vec!["cat", "/tmp/fox/f\\n51",  "/tmp/fox/f\\22", "/tmp/fox/f'\\'90"]);
+
+        let in3 = String::from("echo 'hello\\\"worldtest\\\"example'");
+        let out3 = parse_args(in3);
+        assert_eq!(out3, vec!["echo", "hello\\\"worldtest\\\"example"]);
     }
 }
