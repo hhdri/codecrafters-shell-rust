@@ -24,6 +24,8 @@ impl PipelineCommand {
     pub fn new(args_str: String) -> Self {
         let mut out_file_str: Option<String> = None;
         let mut err_file_str: Option<String> = None;
+        let mut out_append = false;
+        let mut err_append = false;
 
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
@@ -75,21 +77,45 @@ impl PipelineCommand {
                 }
             }
         }
+        for i in 0..args.len() - 1 {
+            if vec![">>", "1>>"].contains(&args[i].as_str()) {
+                out_file_str = Option::from(args[i + 1].clone());
+                for _ in 0..args.len() - i {
+                    args.pop();
+                }
+                out_append = true;
+            }
+        }
+        for i in 0..args.len() - 1 {
+            if vec!["2>>"].contains(&args[i].as_str()) {
+                err_file_str = Option::from(args[i + 1].clone());
+                for _ in 0..args.len() - i {
+                    args.pop();
+                }
+                err_append = true;
+            }
+        }
 
         let mut out_file: Option<File> = None;
         if out_file_str.is_some() {
-            let out_file_err = File::create(out_file_str.unwrap());
-            if out_file_err.is_ok() {
-                out_file = Option::from(out_file_err.unwrap());
-            }
+            let out_file_err = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(!out_append)
+                .append(out_append)
+                .open(out_file_str.unwrap());
+            out_file = Option::from(out_file_err.unwrap());
         }
 
         let mut err_file: Option<File> = None;
         if err_file_str.is_some() {
-            let err_file_err = File::create(err_file_str.unwrap());
-            if err_file_err.is_ok() {
-                err_file = Option::from(err_file_err.unwrap());
-            }
+            let err_file_err = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(err_append)
+                .append(err_append)
+                .open(err_file_str.unwrap());
+            err_file = Option::from(err_file_err.unwrap());
         }
 
         Self {
