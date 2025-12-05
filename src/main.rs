@@ -18,21 +18,25 @@ fn parse_args(args_str: String) -> Vec<String>{
     let mut args = vec![String::from("")];
     let mut ongoing_single_quote = false;
     let mut ongoing_double_quote = false;
-    let mut ongoing_escaping = false;
-    for elem in args_str.chars() {
+    let mut elem_idx = 0;
+    while elem_idx < args_str.len() {
         let args_len_curr = args.len();
+        let elem = args_str.chars().nth(elem_idx).unwrap();
 
-        if ongoing_escaping {
-            args[args_len_curr - 1].push(elem);
-            ongoing_escaping = false;
-        }
-        else if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
-            if !args[args_len_curr - 1].is_empty() {
-                args.push(String::from(""));
+        if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
+            args.push(String::from(""));
+            while args_str.chars().nth(elem_idx).unwrap() == ' ' {
+                elem_idx += 1;
             }
+            continue;
         }
-        else if elem == '\\' && !ongoing_single_quote && !ongoing_double_quote {
-            ongoing_escaping = true;
+        else if elem == '\\' && !ongoing_single_quote {
+            elem_idx += 1;
+            let candidate_escaper = args_str.chars().nth(elem_idx).unwrap();
+            if ongoing_double_quote && !vec!['"', '\\', '$', '`'].contains(&candidate_escaper) {
+                args[args_len_curr - 1].push('\\');
+            }
+            args[args_len_curr - 1].push(candidate_escaper);
         }
         else if elem == '\'' && !ongoing_double_quote {
             ongoing_single_quote = !ongoing_single_quote;
@@ -43,6 +47,7 @@ fn parse_args(args_str: String) -> Vec<String>{
         else {
             args[args_len_curr - 1].push(elem);
         }
+        elem_idx += 1;
     }
     if args[args.len() - 1].trim().is_empty() {
         args.pop();
@@ -131,5 +136,9 @@ mod tests {
         let in3 = String::from("echo 'hello\\\"worldtest\\\"example'");
         let out3 = parse_args(in3);
         assert_eq!(out3, vec!["echo", "hello\\\"worldtest\\\"example"]);
+
+        let in4 = String::from("echo \"A \\\\ escapes itself\"");
+        let out4 = parse_args(in4);
+        assert_eq!(out4, vec!["echo", "A \\ escapes itself"]);
     }
 }
