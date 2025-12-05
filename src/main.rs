@@ -23,6 +23,7 @@ impl PipelineCommand {
     // TODO: make parse_args private and handle unit tests
     pub fn new(args_str: String) -> Self {
         let mut out_file_str: Option<String> = None;
+        let mut err_file_str: Option<String> = None;
 
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
@@ -58,12 +59,17 @@ impl PipelineCommand {
             }
             elem_idx += 1;
         }
-        // if args[args.len() - 1].trim().is_empty() {
-        //     args.pop();
-        // }
         for i in 0..args.len() - 1 {
             if vec![">", "1>"].contains(&args[i].as_str()) {
                 out_file_str = Option::from(args[i + 1].clone());
+                for _ in 0..args.len() - i {
+                    args.pop();
+                }
+            }
+        }
+        for i in 0..args.len() - 1 {
+            if vec!["2>"].contains(&args[i].as_str()) {
+                err_file_str = Option::from(args[i + 1].clone());
                 for _ in 0..args.len() - i {
                     args.pop();
                 }
@@ -78,12 +84,20 @@ impl PipelineCommand {
             }
         }
 
+        let mut err_file: Option<File> = None;
+        if err_file_str.is_some() {
+            let err_file_err = File::create(err_file_str.unwrap());
+            if err_file_err.is_ok() {
+                err_file = Option::from(err_file_err.unwrap());
+            }
+        }
+
         Self {
             args_str,
             args,
             in_file: None,
             out_file,
-            err_file: None
+            err_file
         }
 
     }
@@ -104,13 +118,6 @@ fn find_all_exes() -> Vec<PathBuf> {
         .map(fs::read_dir).flatten().flatten().flatten().filter(
         |entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0
     ).map(|entry| entry.path()).collect()
-}
-
-fn get_out_write(out_file: Option<File>) -> Box<dyn io::Write> {
-    match out_file {
-        Some(file) => Box::new(file),
-        None => Box::new(io::stdout())
-    }
 }
 
 fn main() -> io::Result<()> {
@@ -190,9 +197,14 @@ fn main() -> io::Result<()> {
                 Some(file) => Stdio::from(file),
                 None => Stdio::from(io::stdout())
             };
+            let stderr = match command.err_file.take() {
+                Some(file) => Stdio::from(file),
+                None => Stdio::from(io::stderr())
+            };
             let aaa = Command::new(&command.args[0])
                 .args(&command.args[1..])
                 .stdout(stdout)
+                .stderr(stderr)
                 .spawn();
             aaa.unwrap().wait()?;
         }
