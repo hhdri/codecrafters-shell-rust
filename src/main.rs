@@ -51,7 +51,7 @@ impl PipelineCommand {
             else if elem == '\\' && !ongoing_single_quote && elem_idx < args_str.len() - 1 {
                 elem_idx += 1;
                 let candidate_escaper = args_str_chars[elem_idx];
-                if ongoing_double_quote && !vec!['"', '\\', '$', '`'].contains(&candidate_escaper) {
+                if ongoing_double_quote && !matches!(candidate_escaper, '"' | '\\' | '$' | '`') {
                     args[args_len_curr - 1].push('\\');
                 }
                 args[args_len_curr - 1].push(candidate_escaper);
@@ -74,12 +74,12 @@ impl PipelineCommand {
         let mut err_append = false;
         let mut n_pop = 0;
         for i in 0..args.len() - 1 {
-            if vec![">", "1>", ">>", "1>>"].contains(&args[i].as_str()) {
+            if matches!(args[i].as_str(), ">" | "1>" | ">>" | "1>>") {
                 out_file_str = Option::from(args[i + 1].clone());
                 n_pop = max(n_pop, args.len() - i);
-                out_append = vec![">>", "1>>"].contains(&args[i].as_str());
+                out_append = matches!(args[i].as_str(), ">>" | "1>>");
             }
-            if vec!["2>", "2>>"].contains(&args[i].as_str()) {
+            if matches!(args[i].as_str(), "2>" | "2>>") {
                 err_file_str = Option::from(args[i + 1].clone());
                 n_pop = max(n_pop, args.len() - i);
                 err_append = args[i].as_str() == "2>>";
@@ -162,7 +162,7 @@ fn main() -> io::Result<()> {
                 .collect::<Vec<_>>();
 
             if command.args.len() > 1 {
-                if vec!["echo", "exit", "type", "pwd"].contains(&command.args[1].as_str()) {
+                if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd") {
                     let mut out_write: Box<dyn Write> = match command.out_file.take() {
                         Some(file) => Box::new(file),
                         None => Box::new(io::stdout())
