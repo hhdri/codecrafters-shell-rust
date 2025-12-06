@@ -46,36 +46,54 @@ impl PipelineCommand {
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
         let mut ongoing_double_quote = false;
-        let mut elem_idx = 0;
-        let args_str_chars: Vec<_> = args_str.chars().collect();
-        while elem_idx < args_str.len() {
-            let args_len_curr = args.len();
-            let elem = args_str_chars[elem_idx];
+        let mut chars = args_str.chars().peekable();
+        let mut opt_c = chars.next();
+        loop {
+            if opt_c.is_none() {
+                break;
+            }
 
-            if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
+            let mut c = opt_c.unwrap();
+
+            let args_len_curr = args.len();
+
+            if c == ' ' && !ongoing_single_quote && !ongoing_double_quote {
+
                 args.push(String::from(""));
-                while args_str_chars[elem_idx] == ' ' { elem_idx += 1; }
+                while c == ' ' {
+                    opt_c = chars.next();
+                    match opt_c {
+                        Some(next_c) => c = next_c,
+                        _ => break
+                    }
+                }
+
                 continue;
             }
-            else if elem == '\n' { }
-            else if elem == '\\' && !ongoing_single_quote && elem_idx < args_str.len() - 1 {
-                elem_idx += 1;
-                let candidate_escaper = args_str_chars[elem_idx];
-                if ongoing_double_quote && !matches!(candidate_escaper, '"' | '\\' | '$' | '`') {
-                    args[args_len_curr - 1].push('\\');
+            else if c == '\n' { }
+            else if c == '\\' && !ongoing_single_quote {
+                opt_c = chars.next();
+                match opt_c {
+                    Some(candidate_escaper) => {
+                        if ongoing_double_quote && !matches!(candidate_escaper, '"' | '\\' | '$' | '`') {
+                            args[args_len_curr - 1].push('\\');
+                        }
+                        args[args_len_curr - 1].push(candidate_escaper);
+                    },
+                    _ => break
                 }
-                args[args_len_curr - 1].push(candidate_escaper);
             }
-            else if elem == '\'' && !ongoing_double_quote {
+            else if c == '\'' && !ongoing_double_quote {
                 ongoing_single_quote = !ongoing_single_quote;
             }
-            else if elem == '\"' && !ongoing_single_quote {
+            else if c == '\"' && !ongoing_single_quote {
                 ongoing_double_quote = !ongoing_double_quote;
             }
             else {
-                args[args_len_curr - 1].push(elem);
+                args[args_len_curr - 1].push(c);
             }
-            elem_idx += 1;
+
+            opt_c = chars.next();
         }
 
         let mut out_file_str: Option<String> = None;
