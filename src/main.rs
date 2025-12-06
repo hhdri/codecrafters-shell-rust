@@ -1,4 +1,4 @@
-#[allow(unused_imports)]
+use std::cmp::max;
 use std::io::{self, Write};
 use std::env;
 use std::env::{current_dir, set_current_dir, var_os};
@@ -12,15 +12,28 @@ struct Pipeline {
     commands: Vec<PipelineCommand>
 }
 struct PipelineCommand {
-    args_str: String,
+    // args_str: String,
     args: Vec<String>,
-    in_file: Option<File>,
+    // in_file: Option<File>,
     out_file: Option<File>,
     err_file: Option<File>,
 }
 
 impl PipelineCommand {
-    // TODO: make parse_args private and handle unit tests
+    fn open_write_file(filename: Option<String>, append: bool) -> Option<File> {
+        match filename {
+            Some(filename) => Option::from(
+                fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(!append)
+                    .append(append)
+                    .open(filename)
+                    .expect("file can't be opened for writing"),
+            ),
+            None => None
+        }
+    }
     pub fn new(args_str: String) -> Self {
         let mut out_file_str: Option<String> = None;
         let mut err_file_str: Option<String> = None;
@@ -61,69 +74,26 @@ impl PipelineCommand {
             }
             elem_idx += 1;
         }
-        for i in 0..args.len() - 1 {
-            if vec![">", "1>"].contains(&args[i].as_str()) {
-                out_file_str = Option::from(args[i + 1].clone());
-                for _ in 0..args.len() - i {
-                    args.pop();
-                }
-            }
-        }
-        for i in 0..args.len() - 1 {
-            if vec!["2>"].contains(&args[i].as_str()) {
-                err_file_str = Option::from(args[i + 1].clone());
-                for _ in 0..args.len() - i {
-                    args.pop();
-                }
-            }
-        }
-        for i in 0..args.len() - 1 {
-            if vec![">>", "1>>"].contains(&args[i].as_str()) {
-                out_file_str = Option::from(args[i + 1].clone());
-                for _ in 0..args.len() - i {
-                    args.pop();
-                }
-                out_append = true;
-            }
-        }
-        for i in 0..args.len() - 1 {
-            if vec!["2>>"].contains(&args[i].as_str()) {
-                err_file_str = Option::from(args[i + 1].clone());
-                for _ in 0..args.len() - i {
-                    args.pop();
-                }
-                err_append = true;
-            }
-        }
 
-        let mut out_file: Option<File> = None;
-        if out_file_str.is_some() {
-            let out_file_err = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(!out_append)
-                .append(out_append)
-                .open(out_file_str.unwrap());
-            out_file = Option::from(out_file_err.unwrap());
+        let mut n_pop = 0;
+        for i in 0..args.len() - 1 {
+            if vec![">", "1>", ">>", "1>>"].contains(&args[i].as_str()) {
+                out_file_str = Option::from(args[i + 1].clone());
+                n_pop = max(n_pop, args.len() - i);
+                out_append = vec![">>", "1>>"].contains(&args[i].as_str());
+            }
+            if vec!["2>", "2>>"].contains(&args[i].as_str()) {
+                err_file_str = Option::from(args[i + 1].clone());
+                n_pop = max(n_pop, args.len() - i);
+                err_append = args[i].as_str() == "2>>";
+            }
         }
-
-        let mut err_file: Option<File> = None;
-        if err_file_str.is_some() {
-            let err_file_err = fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(!err_append)
-                .append(err_append)
-                .open(err_file_str.unwrap());
-            err_file = Option::from(err_file_err.unwrap());
-        }
+        for _ in 0..n_pop { args.pop(); }
 
         Self {
-            args_str,
             args,
-            in_file: None,
-            out_file,
-            err_file
+            out_file: Self::open_write_file(out_file_str, out_append),
+            err_file: Self::open_write_file(err_file_str, err_append)
         }
 
     }
