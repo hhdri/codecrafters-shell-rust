@@ -125,85 +125,82 @@ fn main() -> io::Result<()> {
 
         let mut pipeline = Pipeline::new(args_str);
         let command = &mut pipeline.commands[0];
-        let command_arg_0 = command.args[0].clone();
 
         let path_matches = all_exes.iter()
-            .filter(|entry| *entry.file_stem().unwrap() == *command_arg_0)
+            .filter(|entry| *entry.file_stem().unwrap() == *command.args[0])
             .collect::<Vec<_>>();
 
-        if command.args[0] == "exit" {
-            break;
-        }
-        else if command.args[0] == "echo" {
-            let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                Some(file) => Box::new(file),
-                None => Box::new(io::stdout())
-            };
-            writeln!(out_write, "{}", command.args[1..].join(" "))?;
-        }
-        else if command.args[0] == "pwd" {
-            let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                Some(file) => Box::new(file),
-                None => Box::new(io::stdout())
-            };
-            writeln!(out_write, "{}", current_dir()?.display())?;
-        }
-        else if command.args[0] == "cd" {
-            let cd_result = set_current_dir(
-                command.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
-            );
-            if cd_result.is_err() {
-                println!("cd: {}: No such file or directory", command.args[1]);
+        match command.args[0].as_str() {
+            "exit" => break,
+            "echo" => {
+                let mut out_write: Box<dyn Write> = match command.out_file.take() {
+                    Some(file) => Box::new(file),
+                    None => Box::new(io::stdout())
+                };
+                writeln!(out_write, "{}", command.args[1..].join(" "))?;
             }
-        }
-        else if command.args[0] == "type" {
-            let _path_matches = all_exes.iter()
-                .filter(|entry| *entry.file_stem().unwrap() == *command.args[1])
-                .collect::<Vec<_>>();
+            "pwd" => {
+                let mut out_write: Box<dyn Write> = match command.out_file.take() {
+                    Some(file) => Box::new(file),
+                    None => Box::new(io::stdout())
+                };
+                writeln!(out_write, "{}", current_dir()?.display())?;
+            }
+            "cd" => {
+                let cd_result = set_current_dir(
+                    command.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
+                );
+                if cd_result.is_err() {
+                    println!("cd: {}: No such file or directory", command.args[1]);
+                }
+            }
+            "type" => {
+                let _path_matches = all_exes.iter()
+                    .filter(|entry| *entry.file_stem().unwrap() == *command.args[1])
+                    .collect::<Vec<_>>();
 
-            if command.args.len() > 1 {
-                if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd") {
-                    let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                        Some(file) => Box::new(file),
-                        None => Box::new(io::stdout())
-                    };
-                    writeln!(out_write, "{} is a shell builtin", command.args[1])?;
-                }
-                else if _path_matches.first().is_some() {
-                    let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                        Some(file) => Box::new(file),
-                        None => Box::new(io::stdout())
-                    };
-                    writeln!(out_write, "{} is {}", command.args[1], _path_matches.first().unwrap().display())?;
-                }
-                else {
-                    let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                        Some(file) => Box::new(file),
-                        None => Box::new(io::stdout())
-                    };
-                    writeln!(out_write, "{}: not found", command.args[1])?;
+                if command.args.len() > 1 {
+                    if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd") {
+                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
+                            Some(file) => Box::new(file),
+                            None => Box::new(io::stdout())
+                        };
+                        writeln!(out_write, "{} is a shell builtin", command.args[1])?;
+                    }
+                    else if _path_matches.first().is_some() {
+                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
+                            Some(file) => Box::new(file),
+                            None => Box::new(io::stdout())
+                        };
+                        writeln!(out_write, "{} is {}", command.args[1], _path_matches.first().unwrap().display())?;
+                    }
+                    else {
+                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
+                            Some(file) => Box::new(file),
+                            None => Box::new(io::stdout())
+                        };
+                        writeln!(out_write, "{}: not found", command.args[1])?;
+                    }
                 }
             }
-        }
-        else if path_matches.first().is_some() {
-            let stdout: Stdio = match command.out_file.take() {
-                Some(file) => Stdio::from(file),
-                None => Stdio::from(io::stdout())
-            };
-            let stderr: Stdio = match command.err_file.take() {
-                Some(file) => Stdio::from(file),
-                None => Stdio::from(io::stderr())
-            };
-            let aaa = Command::new(&command.args[0])
-                .args(&command.args[1..])
-                .stdout(stdout)
-                .stderr(stderr)
-                .spawn();
-            aaa.unwrap().wait()?;
-        }
-        else {
-            eprintln!("{}: command not found", command.args[0]);
-        }
+            _ if path_matches.first().is_some() => {
+                let stdout: Stdio = match command.out_file.take() {
+                    Some(file) => Stdio::from(file),
+                    None => Stdio::from(io::stdout())
+                };
+                let stderr: Stdio = match command.err_file.take() {
+                    Some(file) => Stdio::from(file),
+                    None => Stdio::from(io::stderr())
+                };
+                let aaa = Command::new(&command.args[0])
+                    .args(&command.args[1..])
+                    .stdout(stdout)
+                    .stderr(stderr)
+                    .spawn();
+                aaa.unwrap().wait()?;
+            }
+            _ => eprintln!("{}: command not found", command.args[0])
+        };
     }
 
     Ok(())
