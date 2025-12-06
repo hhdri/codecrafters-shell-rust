@@ -7,8 +7,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::path::PathBuf;
 use rustyline::error::ReadlineError;
-use rustyline::{Result, Editor, Context};
+use rustyline::{Result, Editor, Context, CompletionType};
 use rustyline::completion::{Completer, Pair};
+use rustyline::config::Configurer;
 use rustyline::history::DefaultHistory;
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
@@ -162,14 +163,17 @@ fn main() -> io::Result<()> {
     let all_exes = find_all_exes();
 
     let builtins = ["echo", "exit", "type", "pwd", "cd"];
-    let commands: Vec<String> = all_exes.iter()
+    let mut commands: Vec<String> = all_exes.iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
         .map(String::from)
         .chain(builtins.iter().map(|&s| s.to_string()))
         .collect();
+    commands.sort();
     let helper = CommandCompleter { commands };
     let mut rl: Editor<CommandCompleter, DefaultHistory> = Editor::new().unwrap();
     rl.set_helper(Some(helper));
+    rl.set_completion_type(CompletionType::List);
+
 
     loop {
         print!("$ ");
