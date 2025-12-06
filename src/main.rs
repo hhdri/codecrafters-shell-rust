@@ -6,6 +6,11 @@ use std::fs::File;
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::path::PathBuf;
+use rustyline::error::ReadlineError;
+use rustyline::{Result, Editor, Context};
+use rustyline::completion::{Completer, Pair};
+use rustyline::history::DefaultHistory;
+use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
 struct Pipeline {
     commands: Vec<PipelineCommand>
@@ -129,16 +134,66 @@ fn find_all_exes() -> Vec<PathBuf> {
         .map(|entry| entry.path()).collect()
 }
 
+#[derive(Helper, Highlighter, Hinter, Validator)]
+struct CommandCompleter {
+    commands: Vec<String>,
+}
+
+impl Completer for CommandCompleter {
+    type Candidate = Pair;
+
+    fn complete(&self, line: &str, _: usize, _ctx: &Context) -> Result<(usize, Vec<Pair>)> {
+        let mut candidates = Vec::new();
+
+        for cmd in &self.commands {
+            if cmd.starts_with(line) {
+                candidates.push(Pair {
+                    display: cmd.clone(),
+                    replacement: cmd.clone() + " ",
+                });
+            }
+        }
+
+        Ok((0, candidates))
+    }
+}
+
 fn main() -> io::Result<()> {
     let all_exes = find_all_exes();
+
+    let builtins = ["echo", "exit", "type", "pwd", "cd"];
+    let commands: Vec<String> = all_exes.iter()
+        .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
+        .map(String::from)
+        .chain(builtins.iter().map(|&s| s.to_string()))
+        .collect();
+    let helper = CommandCompleter { commands };
+    let mut rl: Editor<CommandCompleter, DefaultHistory> = Editor::new().unwrap();
+    rl.set_helper(Some(helper));
+
     loop {
         print!("$ ");
         io::stdout().flush()?;
 
-        let mut args_str = String::new();
-        io::stdin().read_line(&mut args_str)?;
+        let args_str = rl.readline("$ ");
 
-        let mut pipeline = Pipeline::new(args_str.as_str());
+        match args_str {
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                continue;
+            },
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break;
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            },
+            Ok(_) => {}
+        }
+
+        let mut pipeline = Pipeline::new(args_str.unwrap().as_str());
         let command = &mut pipeline.commands[0];
 
         let path_matches = all_exes.iter()
