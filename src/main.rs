@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::io::{self, Write};
 use std::env;
 use std::env::{current_dir, set_current_dir, var_os};
@@ -37,23 +36,14 @@ impl PipelineCommand {
             .map(|f| Box::new(f) as Box<dyn Write>)
             .unwrap_or_else(|| Box::new(io::stdout()))
     }
-    pub fn get_err_write(&mut self) -> Box<dyn Write> {
-        self.err_file.take()
-            .map(|f| Box::new(f) as Box<dyn Write>)
-            .unwrap_or_else(|| Box::new(io::stderr()))
-    }
-    pub fn new(args_str: String) -> Self {
+    pub fn new(args_str: &str) -> Self {
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
         let mut ongoing_double_quote = false;
         let mut chars = args_str.chars().peekable();
         let mut opt_c = chars.next();
         loop {
-            if opt_c.is_none() {
-                break;
-            }
-
-            let mut c = opt_c.unwrap();
+            let Some(mut c) = opt_c else { break };
 
             let args_len_curr = args.len();
 
@@ -104,12 +94,12 @@ impl PipelineCommand {
         for i in 0..args.len() - 1 {
             if matches!(args[i].as_str(), ">" | "1>" | ">>" | "1>>") {
                 out_file_str = Some(args[i + 1].clone());
-                n_pop = max(n_pop, args.len() - i);
+                n_pop = n_pop.max( args.len() - i);
                 out_append = matches!(args[i].as_str(), ">>" | "1>>");
             }
             if matches!(args[i].as_str(), "2>" | "2>>") {
                 err_file_str = Some(args[i + 1].clone());
-                n_pop = max(n_pop, args.len() - i);
+                n_pop = n_pop.max(args.len() - i);
                 err_append = args[i].as_str() == "2>>";
             }
         }
@@ -125,13 +115,8 @@ impl PipelineCommand {
 }
 
 impl Pipeline {
-    pub fn new(args_str: String) -> Self {
-        Self {
-            commands: args_str
-                .split("|")
-                .map(|elem| elem.to_string())
-                .map(PipelineCommand::new).collect()
-        }
+    pub fn new(args_str: &str) -> Self {
+        Self { commands: args_str.split("|").map(PipelineCommand::new).collect() }
     }
 }
 
@@ -153,7 +138,7 @@ fn main() -> io::Result<()> {
         let mut args_str = String::new();
         io::stdin().read_line(&mut args_str)?;
 
-        let mut pipeline = Pipeline::new(args_str);
+        let mut pipeline = Pipeline::new(args_str.as_str());
         let command = &mut pipeline.commands[0];
 
         let path_matches = all_exes.iter()
@@ -182,7 +167,7 @@ fn main() -> io::Result<()> {
                     .collect::<Vec<_>>();
 
                 if command.args.len() > 1 {
-                    if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd") {
+                    if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd" | "cd") {
                         writeln!(command.get_out_write(), "{} is a shell builtin", command.args[1])?;
                     }
                     else if let Some(path) =  _path_matches.first() {
@@ -218,24 +203,23 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
     #[test]
     fn test_parse_args() {
-        let in1 = String::from("cat \"/tmp/pig/f\\n53\" \"/tmp/pig/f\\99\" \"/tmp/pig/f'\\'38\"");
+        let in1 = "cat \"/tmp/pig/f\\n53\" \"/tmp/pig/f\\99\" \"/tmp/pig/f'\\'38\"";
         let out1 = PipelineCommand::new(in1).args;
         assert_eq!(out1, vec!["cat", "/tmp/pig/f\\n53", "/tmp/pig/f\\99", "/tmp/pig/f'\\'38"]);
 
-        let in2 = String::from("cat \"/tmp/fox/f\\n51\" \"/tmp/fox/f\\22\" \"/tmp/fox/f'\\'90\"");
+        let in2 = "cat \"/tmp/fox/f\\n51\" \"/tmp/fox/f\\22\" \"/tmp/fox/f'\\'90\"";
         let out2 = PipelineCommand::new(in2).args;
         assert_eq!(out2, vec!["cat", "/tmp/fox/f\\n51",  "/tmp/fox/f\\22", "/tmp/fox/f'\\'90"]);
 
-        let in3 = String::from("echo 'hello\\\"worldtest\\\"example'");
+        let in3 = "echo 'hello\\\"worldtest\\\"example'";
         let out3 = PipelineCommand::new(in3).args;
         assert_eq!(out3, vec!["echo", "hello\\\"worldtest\\\"example"]);
 
-        let in4 = String::from("echo \"A \\\\ escapes itself\"");
+        let in4 = "echo \"A \\\\ escapes itself\"";
         let out4 = PipelineCommand::new(in4).args;
         assert_eq!(out4, vec!["echo", "A \\ escapes itself"]);
     }
