@@ -112,7 +112,7 @@ impl PipelineCommand {
             let err_file_err = fs::OpenOptions::new()
                 .write(true)
                 .create(true)
-                .truncate(err_append)
+                .truncate(!err_append)
                 .append(err_append)
                 .open(err_file_str.unwrap());
             err_file = Option::from(err_file_err.unwrap());
