@@ -12,9 +12,7 @@ struct Pipeline {
     commands: Vec<PipelineCommand>
 }
 struct PipelineCommand {
-    // args_str: String,
     args: Vec<String>,
-    // in_file: Option<File>,
     out_file: Option<File>,
     err_file: Option<File>,
 }
@@ -35,29 +33,24 @@ impl PipelineCommand {
         }
     }
     pub fn new(args_str: String) -> Self {
-        let mut out_file_str: Option<String> = None;
-        let mut err_file_str: Option<String> = None;
-        let mut out_append = false;
-        let mut err_append = false;
-
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
         let mut ongoing_double_quote = false;
         let mut elem_idx = 0;
+        let args_str_chars: Vec<_> = args_str.chars().collect();
         while elem_idx < args_str.len() {
             let args_len_curr = args.len();
-            let elem = args_str.chars().nth(elem_idx).unwrap();
+            let elem = args_str_chars[elem_idx];
 
             if elem == ' ' && !ongoing_single_quote && !ongoing_double_quote {
                 args.push(String::from(""));
-                while args_str.chars().nth(elem_idx).unwrap() == ' ' {
-                    elem_idx += 1;
-                }
+                while args_str_chars[elem_idx] == ' ' { elem_idx += 1; }
                 continue;
             }
-            else if elem == '\\' && !ongoing_single_quote {
+            else if elem == '\n' { }
+            else if elem == '\\' && !ongoing_single_quote && elem_idx < args_str.len() - 1 {
                 elem_idx += 1;
-                let candidate_escaper = args_str.chars().nth(elem_idx).unwrap();
+                let candidate_escaper = args_str_chars[elem_idx];
                 if ongoing_double_quote && !vec!['"', '\\', '$', '`'].contains(&candidate_escaper) {
                     args[args_len_curr - 1].push('\\');
                 }
@@ -75,6 +68,10 @@ impl PipelineCommand {
             elem_idx += 1;
         }
 
+        let mut out_file_str: Option<String> = None;
+        let mut err_file_str: Option<String> = None;
+        let mut out_append = false;
+        let mut err_append = false;
         let mut n_pop = 0;
         for i in 0..args.len() - 1 {
             if vec![">", "1>", ">>", "1>>"].contains(&args[i].as_str()) {
@@ -101,11 +98,12 @@ impl PipelineCommand {
 
 impl Pipeline {
     pub fn new(args_str: String) -> Self {
-        let commands: Vec<PipelineCommand> = args_str
-            .split("|")
-            .map(|elem| elem.to_string())
-            .map(PipelineCommand::new).collect();
-        Self {commands}
+        Self {
+            commands: args_str
+                .split("|")
+                .map(|elem| elem.to_string())
+                .map(PipelineCommand::new).collect()
+        }
     }
 }
 
@@ -124,7 +122,6 @@ fn main() -> io::Result<()> {
 
         let mut args_str = String::new();
         io::stdin().read_line(&mut args_str)?;
-        args_str = args_str[..(args_str.len() - 1)].parse().unwrap();
 
         let mut pipeline = Pipeline::new(args_str);
         let command = &mut pipeline.commands[0];
@@ -189,11 +186,11 @@ fn main() -> io::Result<()> {
             }
         }
         else if path_matches.first().is_some() {
-            let stdout = match command.out_file.take() {
+            let stdout: Stdio = match command.out_file.take() {
                 Some(file) => Stdio::from(file),
                 None => Stdio::from(io::stdout())
             };
-            let stderr = match command.err_file.take() {
+            let stderr: Stdio = match command.err_file.take() {
                 Some(file) => Stdio::from(file),
                 None => Stdio::from(io::stderr())
             };
@@ -205,7 +202,7 @@ fn main() -> io::Result<()> {
             aaa.unwrap().wait()?;
         }
         else {
-            println!("{}: command not found", command.args[0]);
+            eprintln!("{}: command not found", command.args[0]);
         }
     }
 
