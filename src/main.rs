@@ -32,6 +32,16 @@ impl PipelineCommand {
             None => None
         }
     }
+    pub fn get_out_write(&mut self) -> Box<dyn Write> {
+        self.out_file.take()
+            .map(|f| Box::new(f) as Box<dyn Write>)
+            .unwrap_or_else(|| Box::new(io::stdout()))
+    }
+    pub fn get_err_write(&mut self) -> Box<dyn Write> {
+        self.err_file.take()
+            .map(|f| Box::new(f) as Box<dyn Write>)
+            .unwrap_or_else(|| Box::new(io::stderr()))
+    }
     pub fn new(args_str: String) -> Self {
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
@@ -135,18 +145,10 @@ fn main() -> io::Result<()> {
         match command.args[0].as_str() {
             "exit" => break,
             "echo" => {
-                let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                    Some(file) => Box::new(file),
-                    None => Box::new(io::stdout())
-                };
-                writeln!(out_write, "{}", command.args[1..].join(" "))?;
+                writeln!(command.get_out_write(), "{}", command.args[1..].join(" "))?;
             }
             "pwd" => {
-                let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                    Some(file) => Box::new(file),
-                    None => Box::new(io::stdout())
-                };
-                writeln!(out_write, "{}", current_dir()?.display())?;
+                writeln!(command.get_out_write(), "{}", current_dir()?.display())?;
             }
             "cd" => {
                 let cd_result = set_current_dir(
@@ -163,25 +165,13 @@ fn main() -> io::Result<()> {
 
                 if command.args.len() > 1 {
                     if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd") {
-                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                            Some(file) => Box::new(file),
-                            None => Box::new(io::stdout())
-                        };
-                        writeln!(out_write, "{} is a shell builtin", command.args[1])?;
+                        writeln!(command.get_out_write(), "{} is a shell builtin", command.args[1])?;
                     }
-                    else if _path_matches.first().is_some() {
-                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                            Some(file) => Box::new(file),
-                            None => Box::new(io::stdout())
-                        };
-                        writeln!(out_write, "{} is {}", command.args[1], _path_matches.first().unwrap().display())?;
+                    else if let Some(path) =  _path_matches.first() {
+                        writeln!(command.get_out_write(), "{} is {}", command.args[1], path.display())?;
                     }
                     else {
-                        let mut out_write: Box<dyn Write> = match command.out_file.take() {
-                            Some(file) => Box::new(file),
-                            None => Box::new(io::stdout())
-                        };
-                        writeln!(out_write, "{}: not found", command.args[1])?;
+                        writeln!(command.get_out_write(), "{}: not found", command.args[1])?;
                     }
                 }
             }
@@ -194,12 +184,12 @@ fn main() -> io::Result<()> {
                     Some(file) => Stdio::from(file),
                     None => Stdio::from(io::stderr())
                 };
-                let aaa = Command::new(&command.args[0])
+                let child = Command::new(&command.args[0])
                     .args(&command.args[1..])
                     .stdout(stdout)
                     .stderr(stderr)
                     .spawn();
-                aaa.unwrap().wait()?;
+                child.unwrap().wait()?;
             }
             _ => eprintln!("{}: command not found", command.args[0])
         };
