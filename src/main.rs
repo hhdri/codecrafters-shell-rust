@@ -20,7 +20,7 @@ struct PipelineCommand {
 impl PipelineCommand {
     fn open_write_file(filename: Option<String>, append: bool) -> Option<File> {
         match filename {
-            Some(filename) => Option::from(
+            Some(filename) => Some(
                 fs::OpenOptions::new()
                     .write(true)
                     .create(true)
@@ -75,12 +75,12 @@ impl PipelineCommand {
         let mut n_pop = 0;
         for i in 0..args.len() - 1 {
             if matches!(args[i].as_str(), ">" | "1>" | ">>" | "1>>") {
-                out_file_str = Option::from(args[i + 1].clone());
+                out_file_str = Some(args[i + 1].clone());
                 n_pop = max(n_pop, args.len() - i);
                 out_append = matches!(args[i].as_str(), ">>" | "1>>");
             }
             if matches!(args[i].as_str(), "2>" | "2>>") {
-                err_file_str = Option::from(args[i + 1].clone());
+                err_file_str = Some(args[i + 1].clone());
                 n_pop = max(n_pop, args.len() - i);
                 err_append = args[i].as_str() == "2>>";
             }
@@ -109,9 +109,11 @@ impl Pipeline {
 
 fn find_all_exes() -> Vec<PathBuf> {
     env::split_paths(&var_os("PATH").unwrap())
-        .map(fs::read_dir).flatten().flatten().flatten().filter(
-        |entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0
-    ).map(|entry| entry.path()).collect()
+        .filter_map(|p| fs::read_dir(p).ok())
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0)
+        .map(|entry| entry.path()).collect()
 }
 
 fn main() -> io::Result<()> {
