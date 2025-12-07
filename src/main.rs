@@ -14,6 +14,10 @@ use rustyline::config::Configurer;
 use rustyline::history::DefaultHistory;
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
+struct AppState {
+    history: Vec<String>,
+    history_wrote_before : usize
+}
 struct Pipeline {
     commands: Vec<PipelineCommand>
 }
@@ -336,12 +340,11 @@ fn main() -> io::Result<()> {
     rl.set_completion_type(CompletionType::List);
     rl.set_auto_add_history(true);
 
-    let mut history: Vec<String> = vec![];
+    let mut app_state = AppState{ history: vec![], history_wrote_before: 0 };
     if let Some(hist_file_path) = env::var("HISTFILE").ok() {
-        read_history(hist_file_path, &mut history)?;
+        read_history(hist_file_path, &mut app_state.history)?;
     }
-    let mut history_wrote_before = history.len();
-
+    app_state.history_wrote_before = app_state.history.len();
 
     loop {
         let args_str = rl.readline("$ ");
@@ -359,23 +362,25 @@ fn main() -> io::Result<()> {
                 println!("Error: {:?}", err);
                 break;
             },
-            Ok(args_str) => { history.push(args_str); }
+            Ok(args_str) => { app_state.history.push(args_str); }
         }
 
-        let pipeline = Pipeline::new(history.last().unwrap().as_str());
+        let pipeline = Pipeline::new(
+            app_state.history.last().unwrap().as_str()
+        );
 
         let mut join_handles: Vec<JoinHandle<()>> = vec![];
         for mut pipeline_command in pipeline.commands {
             if pipeline_command.args[0] == "exit" {
                 if let Some(hist_file_path) = env::var("HISTFILE").ok() {
-                    write_history(hist_file_path, &mut history, 0, false)?;
+                    write_history(hist_file_path, &mut app_state.history, 0, false)?;
                 }
                 return Ok(())
             }
             else if pipeline_command.args[0] == "history" {
                 if pipeline_command.args.len() > 1 && pipeline_command.args[1] == "-r" {
                     if pipeline_command.args.len() >= 3 {
-                        read_history(pipeline_command.args[2].clone(), &mut history)?;
+                        read_history(pipeline_command.args[2].clone(), &mut app_state.history)?;
                     }
                     else {
                         eprintln!("you must specify a file to load from");
@@ -386,11 +391,11 @@ fn main() -> io::Result<()> {
                         let append= pipeline_command.args[1] == "-a";
                         let maybe_history_wrote_before = write_history(
                             pipeline_command.args[2].clone(),
-                            &mut history,
-                            history_wrote_before,
+                            &mut app_state.history,
+                            app_state.history_wrote_before,
                             append)?;
                         if let Some(_history_wrote_before) = maybe_history_wrote_before {
-                            history_wrote_before = _history_wrote_before;
+                            app_state.history_wrote_before = _history_wrote_before;
                         }
                     }
                     else {
@@ -398,14 +403,14 @@ fn main() -> io::Result<()> {
                     }
                 }
                 else {
-                    let mut last_n = history.len();
+                    let mut last_n = app_state.history.len();
                     if pipeline_command.args.len() > 1 {
                         if let Some(_last_n) = pipeline_command.args[1].parse::<usize>().ok() {
                             last_n = _last_n;
                         }
                     }
-                    for (idx, elem) in history.iter().enumerate() {
-                        if last_n < history.len() { last_n += 1 } else { println!("    {}  {}", idx + 1, elem) }
+                    for (idx, elem) in app_state.history.iter().enumerate() {
+                        if last_n < app_state.history.len() { last_n += 1 } else { println!("    {}  {}", idx + 1, elem) }
                     }
                 }
             }
