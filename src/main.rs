@@ -368,16 +368,7 @@ fn main() -> io::Result<()> {
         for mut pipeline_command in pipeline.commands {
             if pipeline_command.args[0] == "exit" {
                 if let Some(hist_file_path) = env::var("HISTFILE").ok() {
-                    let mut history_file = fs::OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(hist_file_path)
-                        .expect("history file can't be opened for writing");
-                    for elem in &history {
-                        writeln!(history_file, "{}", elem)
-                            .expect("failed writing to history");
-                    }
+                    write_history(hist_file_path, &mut history, 0, false)?;
                 }
                 return Ok(())
             }
@@ -393,13 +384,12 @@ fn main() -> io::Result<()> {
                 else if pipeline_command.args.len() > 1 && matches!(pipeline_command.args[1].as_str(), "-w" | "-a") {
                     if pipeline_command.args.len() >= 3 {
                         let append= pipeline_command.args[1] == "-a";
-                        // TODO: rename
-                        let aaa = write_history(
+                        let maybe_history_wrote_before = write_history(
                             pipeline_command.args[2].clone(),
                             &mut history,
                             history_wrote_before,
                             append)?;
-                        if let Some(_history_wrote_before) = aaa {
+                        if let Some(_history_wrote_before) = maybe_history_wrote_before {
                             history_wrote_before = _history_wrote_before;
                         }
                     }
