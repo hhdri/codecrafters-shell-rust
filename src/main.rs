@@ -1,11 +1,12 @@
-use std::io::{self, Write};
-use std::env;
+use std::io::{self, pipe, PipeReader, PipeWriter, Write};
+use std::{env, thread};
 use std::env::{current_dir, set_current_dir, var_os};
 use std::fs;
 use std::fs::File;
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::path::PathBuf;
+use std::thread::JoinHandle;
 use rustyline::error::ReadlineError;
 use rustyline::{Result, Editor, Context, CompletionType};
 use rustyline::completion::{Completer, Pair};
@@ -20,6 +21,8 @@ struct PipelineCommand {
     args: Vec<String>,
     out_file: Option<File>,
     err_file: Option<File>,
+    in_pipe: Option<PipeReader>,
+    out_pipe: Option<PipeWriter>,
 }
 
 impl PipelineCommand {
@@ -37,12 +40,93 @@ impl PipelineCommand {
             None => None
         }
     }
-    pub fn get_out_write(&mut self) -> Box<dyn Write> {
-        self.out_file.take()
-            .map(|f| Box::new(f) as Box<dyn Write>)
-            .unwrap_or_else(|| Box::new(io::stdout()))
+    pub fn run(&mut self) -> io::Result<()> {
+        let all_exes = find_all_exes();
+        let path_matches = all_exes.iter()
+            .filter(|entry| *entry.file_stem().unwrap() == *self.args[0])
+            .collect::<Vec<_>>();
+
+        match self.args[0].as_str() {
+            "echo" => {
+                writeln!(self.get_out_write(), "{}", self.args[1..].join(" "))?;
+            }
+            "pwd" => {
+                writeln!(self.get_out_write(), "{}", current_dir()?.display())?;
+            }
+            "cd" => {
+                let cd_result = set_current_dir(
+                    self.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
+                );
+                if cd_result.is_err() {
+                    println!("cd: {}: No such file or directory", self.args[1]);
+                }
+            }
+            "type" => {
+                let _path_matches = all_exes.iter()
+                    .filter(|entry| *entry.file_stem().unwrap() == *self.args[1])
+                    .collect::<Vec<_>>();
+
+                if self.args.len() > 1 {
+                    if matches!(self.args[1].as_str(), "echo" | "exit" | "type" | "pwd" | "cd") {
+                        writeln!(self.get_out_write(), "{} is a shell builtin", self.args[1])?;
+                    }
+                    else if let Some(path) =  _path_matches.first() {
+                        writeln!(self.get_out_write(), "{} is {}", self.args[1], path.display())?;
+                    }
+                    else {
+                        writeln!(self.get_out_write(), "{}: not found", self.args[1])?;
+                    }
+                }
+            }
+            _ if path_matches.first().is_some() => {
+                let stdin: Stdio = match self.in_pipe.take() {
+                    Some(stdin) => Stdio::from(stdin),
+                    _ => Stdio::inherit()
+                };
+                let stdout = match self.out_pipe.take() {
+                    Some(out_pipe) => Stdio::from(out_pipe),
+                    _ => { match self.out_file.take() {
+                        Some(file) => Stdio::from(file),
+                        None => Stdio::from(io::stdout())
+                    }
+                    }
+                };
+                let stderr: Stdio = match self.err_file.take() {
+                    Some(file) => Stdio::from(file),
+                    None => Stdio::from(io::stderr())
+                };
+
+                let child = Command::new(&self.args[0])
+                    .args(&self.args[1..])
+                    .stdout(stdout)
+                    .stderr(stderr)
+                    .stdin(stdin)
+                    .spawn();
+
+                child.unwrap().wait()?;
+            }
+            _ => eprintln!("{}: command not found", self.args[0])
+        };
+
+        Ok(())
     }
-    pub fn new(args_str: &str) -> Self {
+    pub fn get_out_write(&mut self) -> Box<dyn Write> {
+        match self.out_pipe.take() {
+            Some(out_pipe) => Box::new(out_pipe),
+            _ => {
+                self.out_file.take()
+                    .map(|f| Box::new(f) as Box<dyn Write>)
+                    .unwrap_or_else(|| Box::new(io::stdout()))
+            }
+        }
+    }
+    // pub fn get_in_read(&mut self) -> Box<dyn Read> {
+    //     match self.in_pipe.take() {
+    //         Some(in_pipe) => Box::new(in_pipe),
+    //         _ => Box::new(io::stdin())
+    //     }
+    // }
+    pub fn new(args_str: &str, in_pipe: Option<PipeReader>, out_pipe: Option<PipeWriter>) -> Self {
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
         let mut ongoing_double_quote = false;
@@ -114,7 +198,9 @@ impl PipelineCommand {
         Self {
             args,
             out_file: Self::open_write_file(out_file_str, out_append),
-            err_file: Self::open_write_file(err_file_str, err_append)
+            err_file: Self::open_write_file(err_file_str, err_append),
+            in_pipe,
+            out_pipe,
         }
 
     }
@@ -122,7 +208,24 @@ impl PipelineCommand {
 
 impl Pipeline {
     pub fn new(args_str: &str) -> Self {
-        Self { commands: args_str.split("|").map(PipelineCommand::new).collect() }
+        let commands_str: Vec<_> = args_str.split("|").collect();
+        let n_commands = commands_str.len();
+        let mut pipes_in: Vec<Option<PipeReader>> = vec![];
+        let mut pipes_out: Vec<Option<PipeWriter>> = vec![];
+        for _ in 0..n_commands - 1 {
+            let (_pipe_in, _pipe_out) = pipe().expect("can't create pipes between processes");
+            pipes_in.push(Some(_pipe_in));
+            pipes_out.push(Some(_pipe_out));
+        }
+        let mut commands: Vec<PipelineCommand> = vec![];
+        for i in 0..n_commands {
+            commands.push(PipelineCommand::new(
+                commands_str[i].trim(),
+                if i == 0 {None} else {pipes_in[i-1].take()},
+                if i == n_commands - 1 {None} else {pipes_out[i].take()}
+            ))
+        }
+        Self {commands}
     }
 }
 
@@ -160,10 +263,9 @@ impl Completer for CommandCompleter {
 }
 
 fn main() -> io::Result<()> {
-    let all_exes = find_all_exes();
-
+    // TODO: Handle builtins in a more structured way
     let builtins = ["echo", "exit", "type", "pwd", "cd"];
-    let mut commands: Vec<String> = all_exes.iter()
+    let mut commands: Vec<String> = find_all_exes().iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
         .map(String::from)
         .chain(builtins.iter().map(|&s| s.to_string()))
@@ -197,64 +299,23 @@ fn main() -> io::Result<()> {
             Ok(_) => {}
         }
 
-        let mut pipeline = Pipeline::new(args_str.unwrap().as_str());
-        let command = &mut pipeline.commands[0];
+        let pipeline = Pipeline::new(args_str.unwrap().as_str());
 
-        let path_matches = all_exes.iter()
-            .filter(|entry| *entry.file_stem().unwrap() == *command.args[0])
-            .collect::<Vec<_>>();
-
-        match command.args[0].as_str() {
-            "exit" => break,
-            "echo" => {
-                writeln!(command.get_out_write(), "{}", command.args[1..].join(" "))?;
+        let mut join_handles: Vec<JoinHandle<()>> = vec![];
+        for mut pipeline_command in pipeline.commands {
+            if pipeline_command.args[0] == "exit" {
+                return Ok(())
             }
-            "pwd" => {
-                writeln!(command.get_out_write(), "{}", current_dir()?.display())?;
+            else {
+                let thread_join_handle = thread::spawn(move || {
+                    pipeline_command.run().expect("failed to run command")
+                });
+                join_handles.push(thread_join_handle);
             }
-            "cd" => {
-                let cd_result = set_current_dir(
-                    command.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
-                );
-                if cd_result.is_err() {
-                    println!("cd: {}: No such file or directory", command.args[1]);
-                }
-            }
-            "type" => {
-                let _path_matches = all_exes.iter()
-                    .filter(|entry| *entry.file_stem().unwrap() == *command.args[1])
-                    .collect::<Vec<_>>();
-
-                if command.args.len() > 1 {
-                    if matches!(command.args[1].as_str(), "echo" | "exit" | "type" | "pwd" | "cd") {
-                        writeln!(command.get_out_write(), "{} is a shell builtin", command.args[1])?;
-                    }
-                    else if let Some(path) =  _path_matches.first() {
-                        writeln!(command.get_out_write(), "{} is {}", command.args[1], path.display())?;
-                    }
-                    else {
-                        writeln!(command.get_out_write(), "{}: not found", command.args[1])?;
-                    }
-                }
-            }
-            _ if path_matches.first().is_some() => {
-                let stdout: Stdio = match command.out_file.take() {
-                    Some(file) => Stdio::from(file),
-                    None => Stdio::from(io::stdout())
-                };
-                let stderr: Stdio = match command.err_file.take() {
-                    Some(file) => Stdio::from(file),
-                    None => Stdio::from(io::stderr())
-                };
-                let child = Command::new(&command.args[0])
-                    .args(&command.args[1..])
-                    .stdout(stdout)
-                    .stderr(stderr)
-                    .spawn();
-                child.unwrap().wait()?;
-            }
-            _ => eprintln!("{}: command not found", command.args[0])
-        };
+        }
+        for join_handle in join_handles {
+            join_handle.join().expect("failed to run pipeline part")
+        }
     }
 
     Ok(())
@@ -267,19 +328,19 @@ mod tests {
     #[test]
     fn test_parse_args() {
         let in1 = "cat \"/tmp/pig/f\\n53\" \"/tmp/pig/f\\99\" \"/tmp/pig/f'\\'38\"";
-        let out1 = PipelineCommand::new(in1).args;
+        let out1 = PipelineCommand::new(in1, None, None).args;
         assert_eq!(out1, vec!["cat", "/tmp/pig/f\\n53", "/tmp/pig/f\\99", "/tmp/pig/f'\\'38"]);
 
         let in2 = "cat \"/tmp/fox/f\\n51\" \"/tmp/fox/f\\22\" \"/tmp/fox/f'\\'90\"";
-        let out2 = PipelineCommand::new(in2).args;
+        let out2 = PipelineCommand::new(in2, None, None).args;
         assert_eq!(out2, vec!["cat", "/tmp/fox/f\\n51",  "/tmp/fox/f\\22", "/tmp/fox/f'\\'90"]);
 
         let in3 = "echo 'hello\\\"worldtest\\\"example'";
-        let out3 = PipelineCommand::new(in3).args;
+        let out3 = PipelineCommand::new(in3, None, None).args;
         assert_eq!(out3, vec!["echo", "hello\\\"worldtest\\\"example"]);
 
         let in4 = "echo \"A \\\\ escapes itself\"";
-        let out4 = PipelineCommand::new(in4).args;
+        let out4 = PipelineCommand::new(in4, None, None).args;
         assert_eq!(out4, vec!["echo", "A \\ escapes itself"]);
     }
 }
