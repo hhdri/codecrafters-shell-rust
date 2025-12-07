@@ -1,4 +1,4 @@
-use std::io::{self, pipe, PipeReader, PipeWriter, Write};
+use std::io::{self, pipe, PipeReader, PipeWriter, Read, Write};
 use std::{env, thread};
 use std::env::{current_dir, set_current_dir, var_os};
 use std::fs;
@@ -331,15 +331,34 @@ fn main() -> io::Result<()> {
                 return Ok(())
             }
             else if pipeline_command.args[0] == "history" {
-                let mut last_n = history.len();
-                if pipeline_command.args.len() > 1 {
-                    if let Some(_last_n) = pipeline_command.args[1].parse::<usize>().ok() {
-                        last_n = _last_n;
+                if pipeline_command.args.len() > 1 && pipeline_command.args[1] == "-r" {
+                    if pipeline_command.args.len() >= 3 {
+                        let mut file = File::open(&pipeline_command.args[2])
+                            .expect("history file can't be loaded");
+                        let mut contents = String::new();
+                        file.read_to_string(&mut contents)?;
+
+                        history.extend(
+                            contents
+                                .split('\n')
+                                .filter(|e|!e.is_empty())
+                                .map(|e|e.to_string())
+                        );
+                    }
+                    else {
+                        eprintln!("you must specify a file to load from");
                     }
                 }
-                for (idx, elem) in history.iter().enumerate() {
-                    if last_n < history.len() { last_n += 1 }
-                    else { println!("    {}  {}", idx + 1, elem) }
+                else {
+                    let mut last_n = history.len();
+                    if pipeline_command.args.len() > 1 {
+                        if let Some(_last_n) = pipeline_command.args[1].parse::<usize>().ok() {
+                            last_n = _last_n;
+                        }
+                    }
+                    for (idx, elem) in history.iter().enumerate() {
+                        if last_n < history.len() { last_n += 1 } else { println!("    {}  {}", idx + 1, elem) }
+                    }
                 }
             }
             else {
@@ -350,7 +369,7 @@ fn main() -> io::Result<()> {
             }
         }
         for join_handle in join_handles {
-            join_handle.join().expect("failed to run pipeline part");
+            join_handle.join().expect("failed to run a pipeline command");
         }
     }
 
