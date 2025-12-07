@@ -330,8 +330,15 @@ fn main() -> io::Result<()> {
                 return Ok(())
             }
             else if pipeline_command.args[0] == "history" {
+                let mut last_n = history.len();
+                if pipeline_command.args.len() > 1 {
+                    if let Some(_last_n) = pipeline_command.args[1].parse::<usize>().ok() {
+                        last_n = _last_n;
+                    }
+                }
                 for (idx, elem) in history.iter().enumerate() {
-                    println!("    {}  {}", idx + 1, elem);
+                    if last_n < history.len() { last_n += 1 }
+                    else { println!("    {}  {}", idx + 1, elem) }
                 }
             }
             else {
