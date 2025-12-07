@@ -27,18 +27,15 @@ struct PipelineCommand {
 
 impl PipelineCommand {
     fn open_write_file(filename: Option<String>, append: bool) -> Option<File> {
-        match filename {
-            Some(filename) => Some(
-                fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(!append)
-                    .append(append)
-                    .open(filename)
-                    .expect("file can't be opened for writing"),
-            ),
-            None => None
-        }
+        filename.map(|f|
+            fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(!append)
+                .append(append)
+                .open(f)
+                .expect("file can't be opened for writing"),
+        )
     }
     pub fn run(&mut self) -> io::Result<()> {
         let all_exes = find_all_exes();
@@ -79,22 +76,17 @@ impl PipelineCommand {
                 }
             }
             _ if path_matches.first().is_some() => {
-                let stdin: Stdio = match self.in_pipe.take() {
-                    Some(stdin) => Stdio::from(stdin),
-                    _ => Stdio::inherit()
-                };
-                let stdout = match self.out_pipe.take() {
-                    Some(out_pipe) => Stdio::from(out_pipe),
-                    _ => { match self.out_file.take() {
-                        Some(file) => Stdio::from(file),
-                        None => Stdio::from(io::stdout())
-                    }
-                    }
-                };
-                let stderr: Stdio = match self.err_file.take() {
-                    Some(file) => Stdio::from(file),
-                    None => Stdio::from(io::stderr())
-                };
+                let stdin = self.in_pipe.take()
+                    .map(Stdio::from)
+                    .unwrap_or(Stdio::inherit());
+                let stdout = self.out_pipe.take().map(Stdio::from).unwrap_or(
+                    self.out_file.take()
+                        .map(Stdio::from)
+                        .unwrap_or(Stdio::from(io::stdout()))
+                );
+                let stderr = self.err_file.take()
+                    .map(Stdio::from)
+                    .unwrap_or(Stdio::from(io::stderr()));
 
                 let child = Command::new(&self.args[0])
                     .args(&self.args[1..])
@@ -120,12 +112,6 @@ impl PipelineCommand {
             }
         }
     }
-    // pub fn get_in_read(&mut self) -> Box<dyn Read> {
-    //     match self.in_pipe.take() {
-    //         Some(in_pipe) => Box::new(in_pipe),
-    //         _ => Box::new(io::stdin())
-    //     }
-    // }
     pub fn new(args_str: &str, in_pipe: Option<PipeReader>, out_pipe: Option<PipeWriter>) -> Self {
         let mut args = vec![String::from("")];
         let mut ongoing_single_quote = false;
@@ -235,7 +221,8 @@ fn find_all_exes() -> Vec<PathBuf> {
         .flatten()
         .filter_map(|e| e.ok())
         .filter(|entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0)
-        .map(|entry| entry.path()).collect()
+        .map(|entry| entry.path())
+        .collect()
 }
 
 #[derive(Helper, Highlighter, Hinter, Validator)]
@@ -278,9 +265,6 @@ fn main() -> io::Result<()> {
 
 
     loop {
-        print!("$ ");
-        io::stdout().flush()?;
-
         let args_str = rl.readline("$ ");
 
         match args_str {
@@ -314,7 +298,7 @@ fn main() -> io::Result<()> {
             }
         }
         for join_handle in join_handles {
-            join_handle.join().expect("failed to run pipeline part")
+            join_handle.join().expect("failed to run pipeline part");
         }
     }
 
