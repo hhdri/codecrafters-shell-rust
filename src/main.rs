@@ -342,6 +342,20 @@ fn main() -> io::Result<()> {
         let mut join_handles: Vec<JoinHandle<()>> = vec![];
         for mut pipeline_command in pipeline.commands {
             if pipeline_command.args[0] == "exit" {
+                if let Some(hist_file_path) = env::var("HISTFILE").ok() {
+                    let append= false;
+                    let mut history_file = fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(!append)
+                        .append(append)
+                        .open(hist_file_path)
+                        .expect("history file can't be opened for writing");
+                    for elem in &history {
+                        writeln!(history_file, "{}", elem)
+                            .expect("failed writing to history");
+                    }
+                }
                 return Ok(())
             }
             else if pipeline_command.args[0] == "history" {
