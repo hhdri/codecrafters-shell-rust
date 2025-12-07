@@ -253,16 +253,6 @@ impl Pipeline {
     }
 }
 
-fn find_all_exes() -> Vec<PathBuf> {
-    env::split_paths(&var_os("PATH").unwrap())
-        .filter_map(|p| fs::read_dir(p).ok())
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter(|entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0)
-        .map(|entry| entry.path())
-        .collect()
-}
-
 #[derive(Helper, Highlighter, Hinter, Validator)]
 struct CommandCompleter {
     commands: Vec<String>,
@@ -287,6 +277,32 @@ impl Completer for CommandCompleter {
     }
 }
 
+fn find_all_exes() -> Vec<PathBuf> {
+    env::split_paths(&var_os("PATH").unwrap())
+        .filter_map(|p| fs::read_dir(p).ok())
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|entry| entry.metadata().unwrap().permissions().mode() & 0o111 != 0)
+        .map(|entry| entry.path())
+        .collect()
+}
+
+fn read_history(path: String, history: &mut Vec<String>) -> io::Result<()> {
+    let mut file = File::open(path)
+        .expect("history file can't be loaded");
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    history.extend(
+        contents
+            .split('\n')
+            .filter(|e|!e.is_empty())
+            .map(|e|e.to_string())
+    );
+
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut commands: Vec<String> = find_all_exes().iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
@@ -303,17 +319,7 @@ fn main() -> io::Result<()> {
 
     let mut history: Vec<String> = vec![];
     if let Some(hist_file_path) = env::var("HISTFILE").ok() {
-        let mut file = File::open(hist_file_path)
-            .expect("history file can't be loaded");
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-
-        history.extend(
-            contents
-                .split('\n')
-                .filter(|e|!e.is_empty())
-                .map(|e|e.to_string())
-        );
+        read_history(hist_file_path, &mut history)?;
     }
     let mut history_wrote_before = history.len();
 
@@ -343,12 +349,10 @@ fn main() -> io::Result<()> {
         for mut pipeline_command in pipeline.commands {
             if pipeline_command.args[0] == "exit" {
                 if let Some(hist_file_path) = env::var("HISTFILE").ok() {
-                    let append= false;
                     let mut history_file = fs::OpenOptions::new()
                         .write(true)
                         .create(true)
-                        .truncate(!append)
-                        .append(append)
+                        .truncate(true)
                         .open(hist_file_path)
                         .expect("history file can't be opened for writing");
                     for elem in &history {
@@ -361,17 +365,7 @@ fn main() -> io::Result<()> {
             else if pipeline_command.args[0] == "history" {
                 if pipeline_command.args.len() > 1 && pipeline_command.args[1] == "-r" {
                     if pipeline_command.args.len() >= 3 {
-                        let mut file = File::open(&pipeline_command.args[2])
-                            .expect("history file can't be loaded");
-                        let mut contents = String::new();
-                        file.read_to_string(&mut contents)?;
-
-                        history.extend(
-                            contents
-                                .split('\n')
-                                .filter(|e|!e.is_empty())
-                                .map(|e|e.to_string())
-                        );
+                        read_history(pipeline_command.args[2].clone(), &mut history)?;
                     }
                     else {
                         eprintln!("you must specify a file to load from");
