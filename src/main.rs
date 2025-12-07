@@ -349,6 +349,24 @@ fn main() -> io::Result<()> {
                         eprintln!("you must specify a file to load from");
                     }
                 }
+                else if pipeline_command.args.len() > 1 && pipeline_command.args[1] == "-w" {
+                    if pipeline_command.args.len() >= 3 {
+                        let mut history_file = fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .append(false)
+                            .open(&pipeline_command.args[2])
+                            .expect("history file can't be opened for writing");
+                        for elem in &history {
+                            writeln!(history_file, "{}", elem)
+                                .expect("failed writing to history");
+                        }
+                    }
+                    else {
+                        eprintln!("you must specify a file to load from");
+                    }
+                }
                 else {
                     let mut last_n = history.len();
                     if pipeline_command.args.len() > 1 {
