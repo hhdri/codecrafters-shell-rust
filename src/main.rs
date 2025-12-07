@@ -25,6 +25,28 @@ struct PipelineCommand {
     out_pipe: Option<PipeWriter>,
 }
 
+#[derive(Copy, Clone)]
+pub enum Builtin {
+    Echo, Pwd, Cd, Type
+}
+
+impl Builtin {
+    pub const ALL: &'static [(&'static str, Builtin)] = &[
+        ("echo", Builtin::Echo),
+        ("pwd", Builtin::Pwd),
+        ("cd", Builtin::Cd),
+        ("type", Builtin::Type),
+    ];
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        Self::ALL.iter().find(|(name, _)| *name == s).map(|(_, b)| *b)
+    }
+
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        Self::ALL.iter().map(|(name, _)| *name)
+    }
+}
+
 impl PipelineCommand {
     fn open_write_file(filename: Option<String>, append: bool) -> Option<File> {
         filename.map(|f|
@@ -50,7 +72,7 @@ impl PipelineCommand {
             self.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
         );
         if cd_result.is_err() {
-            println!("cd: {}: No such file or directory", self.args[1]);
+            writeln!(self.get_err_write(), "cd: {}: No such file or directory", self.args[1])?;
         }
         Ok(())
     }
@@ -60,7 +82,7 @@ impl PipelineCommand {
             .collect::<Vec<_>>();
 
         if self.args.len() > 1 {
-            if matches!(self.args[1].as_str(), "echo" | "type" | "pwd" | "cd" | "history" | "exit") {
+            if Builtin::from_str(self.args[1].as_str()).is_some() || self.args[1] == "history" || self.args[1] == "exit" {
                 writeln!(self.get_out_write(), "{} is a shell builtin", self.args[1])?;
             }
             else if let Some(path) =  _path_matches.first() {
@@ -99,13 +121,16 @@ impl PipelineCommand {
             .filter(|entry| *entry.file_stem().unwrap() == *self.args[0])
             .collect::<Vec<_>>();
 
-        match self.args[0].as_str() {
-            "echo" => self.builtin_echo()?,
-            "pwd" => self.builtin_pwd()?,
-            "cd" => self.builtin_cd()?,
-            "type" => self.builtin_type(&all_exes)?,
-            _ if path_matches.first().is_some() => self.external_command()?,
-            _ => eprintln!("{}: command not found", self.args[0])
+        // Echo, Pwd, Cd, Type, History, Exit,
+        match Builtin::from_str(self.args[0].as_str()) {
+            Some(Builtin::Echo) => self.builtin_echo()?,
+            Some(Builtin::Pwd) => self.builtin_pwd()?,
+            Some(Builtin::Cd) => self.builtin_cd()?,
+            Some(Builtin::Type) => self.builtin_type(&all_exes)?,
+            None => match self.args[0].as_str() {
+                _ if path_matches.first().is_some() => self.external_command()?,
+                _ => eprintln!("{}: command not found", self.args[0])
+            }
         };
 
         Ok(())
@@ -119,6 +144,11 @@ impl PipelineCommand {
                     .unwrap_or_else(|| Box::new(io::stdout()))
             }
         }
+    }
+    pub fn get_err_write(&mut self) -> Box<dyn Write> {
+        self.out_file.take()
+            .map(|f| Box::new(f) as Box<dyn Write>)
+            .unwrap_or_else(|| Box::new(io::stdout()))
     }
     pub fn new(args_str: &str, in_pipe: Option<PipeReader>, out_pipe: Option<PipeWriter>) -> Self {
         let mut args = vec![String::from("")];
@@ -258,12 +288,11 @@ impl Completer for CommandCompleter {
 }
 
 fn main() -> io::Result<()> {
-    // TODO: Handle builtins in a more structured way
-    let builtins = ["echo", "exit", "type", "pwd", "cd", "history"];
     let mut commands: Vec<String> = find_all_exes().iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
         .map(String::from)
-        .chain(builtins.iter().map(|&s| s.to_string()))
+        .chain(Builtin::names().map(|e| e.to_string()))
+        .chain(vec!["history".to_string(), "exit".to_string()])
         .collect();
     commands.sort();
     let helper = CommandCompleter { commands };
