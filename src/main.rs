@@ -300,6 +300,8 @@ fn main() -> io::Result<()> {
     rl.set_helper(Some(helper));
     rl.set_completion_type(CompletionType::List);
 
+    let mut history: Vec<String> = vec![];
+
 
     loop {
         let args_str = rl.readline("$ ");
@@ -317,15 +319,20 @@ fn main() -> io::Result<()> {
                 println!("Error: {:?}", err);
                 break;
             },
-            Ok(_) => {}
+            Ok(args_str) => {history.push(args_str)}
         }
 
-        let pipeline = Pipeline::new(args_str.unwrap().as_str());
+        let pipeline = Pipeline::new(history.last().unwrap().as_str());
 
         let mut join_handles: Vec<JoinHandle<()>> = vec![];
         for mut pipeline_command in pipeline.commands {
             if pipeline_command.args[0] == "exit" {
                 return Ok(())
+            }
+            else if pipeline_command.args[0] == "history" {
+                for (idx, elem) in history.iter().enumerate() {
+                    println!("    {}  {}", idx + 1, elem);
+                }
             }
             else {
                 let thread_join_handle = thread::spawn(move || {
