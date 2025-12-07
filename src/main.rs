@@ -360,18 +360,12 @@ fn main() -> io::Result<()> {
                             .append(append)
                             .open(&pipeline_command.args[2])
                             .expect("history file can't be opened for writing");
-                        if append {
-                            for elem in &history[history_wrote_before..] {
-                                writeln!(history_file, "{}", elem)
-                                    .expect("failed writing to history");
-                            }
-                            history_wrote_before = history.len();
+                        for elem in &history[if append {history_wrote_before} else {0}..] {
+                            writeln!(history_file, "{}", elem)
+                                .expect("failed writing to history");
                         }
-                        else {
-                            for elem in &history {
-                                writeln!(history_file, "{}", elem)
-                                    .expect("failed writing to history");
-                            }
+                        if append {
+                            history_wrote_before = history.len();
                         }
                     }
                     else {
