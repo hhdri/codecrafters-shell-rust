@@ -302,7 +302,20 @@ fn main() -> io::Result<()> {
     rl.set_auto_add_history(true);
 
     let mut history: Vec<String> = vec![];
-    let mut history_wrote_before = 0;
+    if let Some(hist_file_path) = env::var("HISTFILE").ok() {
+        let mut file = File::open(hist_file_path)
+            .expect("history file can't be loaded");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        history.extend(
+            contents
+                .split('\n')
+                .filter(|e|!e.is_empty())
+                .map(|e|e.to_string())
+        );
+    }
+    let mut history_wrote_before = history.len();
 
 
     loop {
