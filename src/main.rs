@@ -81,7 +81,7 @@ impl PipelineCommand {
         Ok(())
     }
     fn builtin_type(&mut self, all_exes: &Vec<PathBuf>) -> io::Result<()> {
-        let _path_matches = all_exes.iter()
+        let path_matches = all_exes.iter()
             .filter(|entry| *entry.file_stem().unwrap() == *self.args[1])
             .collect::<Vec<_>>();
 
@@ -89,7 +89,7 @@ impl PipelineCommand {
             if Builtin::from_str(self.args[1].as_str()).is_some() || self.args[1] == "history" || self.args[1] == "exit" {
                 writeln!(self.get_out_write(), "{} is a shell builtin", self.args[1])?;
             }
-            else if let Some(path) =  _path_matches.first() {
+            else if let Some(path) =  path_matches.first() {
                 writeln!(self.get_out_write(), "{} is {}", self.args[1], path.display())?;
             }
             else {
@@ -150,9 +150,9 @@ impl PipelineCommand {
         }
     }
     pub fn get_err_write(&mut self) -> Box<dyn Write> {
-        self.out_file.take()
+        self.err_file.take()
             .map(|f| Box::new(f) as Box<dyn Write>)
-            .unwrap_or_else(|| Box::new(io::stdout()))
+            .unwrap_or_else(|| Box::new(io::stderr()))
     }
     pub fn new(args_str: &str, in_pipe: Option<PipeReader>, out_pipe: Option<PipeWriter>) -> Self {
         let mut args = vec![String::from("")];
