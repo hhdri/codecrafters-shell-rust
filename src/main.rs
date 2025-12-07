@@ -299,6 +299,7 @@ fn main() -> io::Result<()> {
     let mut rl: Editor<CommandCompleter, DefaultHistory> = Editor::new().unwrap();
     rl.set_helper(Some(helper));
     rl.set_completion_type(CompletionType::List);
+    rl.set_auto_add_history(true);
 
     let mut history: Vec<String> = vec![];
 
@@ -319,7 +320,7 @@ fn main() -> io::Result<()> {
                 println!("Error: {:?}", err);
                 break;
             },
-            Ok(args_str) => {history.push(args_str)}
+            Ok(args_str) => { history.push(args_str); }
         }
 
         let pipeline = Pipeline::new(history.last().unwrap().as_str());
