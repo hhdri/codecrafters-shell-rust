@@ -303,6 +303,25 @@ fn read_history(path: String, history: &mut Vec<String>) -> io::Result<()> {
     Ok(())
 }
 
+fn write_history(path: String, history: &mut Vec<String>, history_wrote_before: usize, append: bool) -> io::Result<Option<usize>> {
+    let mut history_file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(!append)
+        .append(append)
+        .open(path)
+        .expect("history file can't be opened for writing");
+    for elem in &history[if append {history_wrote_before} else {0}..] {
+        writeln!(history_file, "{}", elem)
+            .expect("failed writing to history");
+    }
+
+    if append {
+        return Ok(Some(history.len()))
+    }
+    Ok(None)
+}
+
 fn main() -> io::Result<()> {
     let mut commands: Vec<String> = find_all_exes().iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
@@ -374,19 +393,14 @@ fn main() -> io::Result<()> {
                 else if pipeline_command.args.len() > 1 && matches!(pipeline_command.args[1].as_str(), "-w" | "-a") {
                     if pipeline_command.args.len() >= 3 {
                         let append= pipeline_command.args[1] == "-a";
-                        let mut history_file = fs::OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .truncate(!append)
-                            .append(append)
-                            .open(&pipeline_command.args[2])
-                            .expect("history file can't be opened for writing");
-                        for elem in &history[if append {history_wrote_before} else {0}..] {
-                            writeln!(history_file, "{}", elem)
-                                .expect("failed writing to history");
-                        }
-                        if append {
-                            history_wrote_before = history.len();
+                        // TODO: rename
+                        let aaa = write_history(
+                            pipeline_command.args[2].clone(),
+                            &mut history,
+                            history_wrote_before,
+                            append)?;
+                        if let Some(_history_wrote_before) = aaa {
+                            history_wrote_before = _history_wrote_before;
                         }
                     }
                     else {
