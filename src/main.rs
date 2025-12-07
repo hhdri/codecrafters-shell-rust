@@ -302,6 +302,7 @@ fn main() -> io::Result<()> {
     rl.set_auto_add_history(true);
 
     let mut history: Vec<String> = vec![];
+    let mut history_wrote_before = 0;
 
 
     loop {
@@ -349,18 +350,28 @@ fn main() -> io::Result<()> {
                         eprintln!("you must specify a file to load from");
                     }
                 }
-                else if pipeline_command.args.len() > 1 && pipeline_command.args[1] == "-w" {
+                else if pipeline_command.args.len() > 1 && matches!(pipeline_command.args[1].as_str(), "-w" | "-a") {
                     if pipeline_command.args.len() >= 3 {
+                        let append= pipeline_command.args[1] == "-a";
                         let mut history_file = fs::OpenOptions::new()
                             .write(true)
                             .create(true)
-                            .truncate(true)
-                            .append(false)
+                            .truncate(!append)
+                            .append(append)
                             .open(&pipeline_command.args[2])
                             .expect("history file can't be opened for writing");
-                        for elem in &history {
-                            writeln!(history_file, "{}", elem)
-                                .expect("failed writing to history");
+                        if append {
+                            for elem in &history[history_wrote_before..] {
+                                writeln!(history_file, "{}", elem)
+                                    .expect("failed writing to history");
+                            }
+                            history_wrote_before = history.len();
+                        }
+                        else {
+                            for elem in &history {
+                                writeln!(history_file, "{}", elem)
+                                    .expect("failed writing to history");
+                            }
                         }
                     }
                     else {
