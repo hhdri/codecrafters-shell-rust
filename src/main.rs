@@ -37,6 +37,62 @@ impl PipelineCommand {
                 .expect("file can't be opened for writing"),
         )
     }
+    fn builtin_echo(&mut self) -> io::Result<()> {
+        writeln!(self.get_out_write(), "{}", self.args[1..].join(" "))?;
+        Ok(())
+    }
+    fn builtin_pwd(&mut self) -> io::Result<()> {
+        writeln!(self.get_out_write(), "{}", current_dir()?.display())?;
+        Ok(())
+    }
+    fn builtin_cd(&mut self) -> io::Result<()> {
+        let cd_result = set_current_dir(
+            self.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
+        );
+        if cd_result.is_err() {
+            println!("cd: {}: No such file or directory", self.args[1]);
+        }
+        Ok(())
+    }
+    fn builtin_type(&mut self, all_exes: &Vec<PathBuf>) -> io::Result<()> {
+        let _path_matches = all_exes.iter()
+            .filter(|entry| *entry.file_stem().unwrap() == *self.args[1])
+            .collect::<Vec<_>>();
+
+        if self.args.len() > 1 {
+            if matches!(self.args[1].as_str(), "echo" | "type" | "pwd" | "cd" | "history" | "exit") {
+                writeln!(self.get_out_write(), "{} is a shell builtin", self.args[1])?;
+            }
+            else if let Some(path) =  _path_matches.first() {
+                writeln!(self.get_out_write(), "{} is {}", self.args[1], path.display())?;
+            }
+            else {
+                writeln!(self.get_out_write(), "{}: not found", self.args[1])?;
+            }
+        }
+        Ok(())
+    }
+    fn external_command(&mut self) -> io::Result<()> {
+        Command::new(&self.args[0])
+            .args(&self.args[1..])
+            .stdout(
+                self.out_pipe.take().map(Stdio::from).unwrap_or(
+                    self.out_file.take()
+                        .map(Stdio::from)
+                        .unwrap_or(Stdio::from(io::stdout()))
+                ))
+            .stderr(self.err_file.take()
+                .map(Stdio::from)
+                .unwrap_or(Stdio::from(io::stderr())))
+            .stdin(self.in_pipe.take()
+                .map(Stdio::from)
+                .unwrap_or(Stdio::inherit()))
+            .spawn()
+            .expect("failed to run external command")
+            .wait()?;
+
+        Ok(())
+    }
     pub fn run(&mut self) -> io::Result<()> {
         let all_exes = find_all_exes();
         let path_matches = all_exes.iter()
@@ -44,59 +100,11 @@ impl PipelineCommand {
             .collect::<Vec<_>>();
 
         match self.args[0].as_str() {
-            "echo" => {
-                writeln!(self.get_out_write(), "{}", self.args[1..].join(" "))?;
-            }
-            "pwd" => {
-                writeln!(self.get_out_write(), "{}", current_dir()?.display())?;
-            }
-            "cd" => {
-                let cd_result = set_current_dir(
-                    self.args[1].replace("~", var_os("HOME").unwrap().to_str().unwrap())
-                );
-                if cd_result.is_err() {
-                    println!("cd: {}: No such file or directory", self.args[1]);
-                }
-            }
-            "type" => {
-                let _path_matches = all_exes.iter()
-                    .filter(|entry| *entry.file_stem().unwrap() == *self.args[1])
-                    .collect::<Vec<_>>();
-
-                if self.args.len() > 1 {
-                    if matches!(self.args[1].as_str(), "echo" | "exit" | "type" | "pwd" | "cd") {
-                        writeln!(self.get_out_write(), "{} is a shell builtin", self.args[1])?;
-                    }
-                    else if let Some(path) =  _path_matches.first() {
-                        writeln!(self.get_out_write(), "{} is {}", self.args[1], path.display())?;
-                    }
-                    else {
-                        writeln!(self.get_out_write(), "{}: not found", self.args[1])?;
-                    }
-                }
-            }
-            _ if path_matches.first().is_some() => {
-                let stdin = self.in_pipe.take()
-                    .map(Stdio::from)
-                    .unwrap_or(Stdio::inherit());
-                let stdout = self.out_pipe.take().map(Stdio::from).unwrap_or(
-                    self.out_file.take()
-                        .map(Stdio::from)
-                        .unwrap_or(Stdio::from(io::stdout()))
-                );
-                let stderr = self.err_file.take()
-                    .map(Stdio::from)
-                    .unwrap_or(Stdio::from(io::stderr()));
-
-                let child = Command::new(&self.args[0])
-                    .args(&self.args[1..])
-                    .stdout(stdout)
-                    .stderr(stderr)
-                    .stdin(stdin)
-                    .spawn();
-
-                child.unwrap().wait()?;
-            }
+            "echo" => self.builtin_echo()?,
+            "pwd" => self.builtin_pwd()?,
+            "cd" => self.builtin_cd()?,
+            "type" => self.builtin_type(&all_exes)?,
+            _ if path_matches.first().is_some() => self.external_command()?,
             _ => eprintln!("{}: command not found", self.args[0])
         };
 
@@ -251,7 +259,7 @@ impl Completer for CommandCompleter {
 
 fn main() -> io::Result<()> {
     // TODO: Handle builtins in a more structured way
-    let builtins = ["echo", "exit", "type", "pwd", "cd"];
+    let builtins = ["echo", "exit", "type", "pwd", "cd", "history"];
     let mut commands: Vec<String> = find_all_exes().iter()
         .filter_map(|path| path.file_stem().and_then(|s| s.to_str()))
         .map(String::from)
